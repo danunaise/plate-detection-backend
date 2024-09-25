@@ -2,7 +2,7 @@ import time
 import os
 import cv2
 import numpy as np
-from torch.xpu import device
+from datetime import datetime
 from ultralytics import YOLO
 from PIL import Image, ImageDraw, ImageFont
 import requests
@@ -67,22 +67,21 @@ def insert_plate(f_image, p_image, p_text, province, date=None):
 
     cursor = conn.cursor()
     try:
-        # Insert into the PostgreSQL table (adjusted for your table's schema)
+        # Change 'date' to 'data' to match the column name in your table
         cursor.execute(
-            'INSERT INTO "plateDetection" (f_image, p_image, p_text, province, date) VALUES (%s, %s, %s, %s, to_char(NOW(), \'YYYY-MM-DD"T"HH24:MI:SS"Z"\'));',
+            'INSERT INTO "plateDetection" (f_image, p_image, p_text, province, data) VALUES (%s, %s, %s, %s, NOW());',
             (f_image, p_image, p_text, province)
         )
-        conn.commit()
 
-        # Emit new data over WebSocket
+        conn.commit()
+        # Emit the correct data
         socketio.emit('new_plate', {
             "f_image": f_image,
             "p_image": p_image,
             "p_text": p_text,
             "province": province,
-            "date": date
+            "date": date  # You may still pass the 'date' here if it's being used elsewhere
         })
-
         cursor.close()
         conn.close()
         return True
@@ -91,6 +90,7 @@ def insert_plate(f_image, p_image, p_text, province, date=None):
         cursor.close()
         conn.close()
         return False
+
 
 # Function to perform OCR using Google Vision API via HTTP request
 def perform_ocr(image_path):

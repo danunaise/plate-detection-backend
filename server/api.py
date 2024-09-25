@@ -65,7 +65,8 @@ def get_plates():
 
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT id, f_image, p_image, p_text, province, date FROM "plateDetection";')
+        # Change 'date' to 'data' in the SELECT query
+        cursor.execute('SELECT id, f_image, p_image, p_text, province, data FROM "plateDetection";')
         rows = cursor.fetchall()
         plates = []
         for row in rows:
@@ -75,8 +76,8 @@ def get_plates():
                 "p_image": row[2],
                 "p_text": row[3],
                 "province": row[4],
-                # Convert the 'date' field to a string before returning
-                "date": row[5].isoformat() if isinstance(row[5], datetime) else str(row[5])
+                # Ensure the 'data' field is converted to a string before returning
+                "data": row[5].strftime('%Y-%m-%d %H:%M:%S') if row[5] else None
             })
         cursor.close()
         conn.close()
@@ -86,6 +87,7 @@ def get_plates():
         cursor.close()
         conn.close()
         return jsonify({"error": "Error fetching data"}), 500
+
 
 @app.route('/images/<path:filename>')
 def serve_image(filename):
