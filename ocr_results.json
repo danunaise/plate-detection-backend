@@ -1,0 +1,32 @@
+[
+    {
+        "license_plate": "4ขอ\nกรุงเทพมหานค\n6646",
+        "plate_image_path": "images/license_plates\\plate_1.png",
+        "full_image_path": "images/full_images\\full_1.png"
+    },
+    {
+        "license_plate": "6ขน\nกรุงเทพมหานคร\n4260",
+        "plate_image_path": "images/license_plates\\plate_2.png",
+        "full_image_path": "images/full_images\\full_2.png"
+    },
+    {
+        "license_plate": "6ขยะ\nกรุงเทพมหานคร\n7681",
+        "plate_image_path": "images/license_plates\\plate_3.png",
+        "full_image_path": "images/full_images\\full_3.png"
+    },
+    {
+        "license_plate": "5ขอ\nกรุงเทพมหานคร\n3827",
+        "plate_image_path": "images/license_plates\\plate_4.png",
+        "full_image_path": "images/full_images\\full_4.png"
+    },
+    {
+        "license_plate": "5ขฆ\nกรุงเทพมหานคร\n7049",
+        "plate_image_path": "images/license_plates\\plate_5.png",
+        "full_image_path": "images/full_images\\full_5.png"
+    },
+    {
+        "license_plate": "4ขพ\nกรุงเทพมหานคร\n2281",
+        "plate_image_path": "images/license_plates\\plate_6.png",
+        "full_image_path": "images/full_images\\full_6.png"
+    }
+]
