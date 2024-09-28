@@ -1,20 +1,15 @@
 import time
 import os
 import cv2
-import numpy as np
-from datetime import datetime
-from ultralytics import YOLO
-from PIL import Image, ImageDraw, ImageFont
 import requests
 import base64
-from flask import Flask, jsonify, send_from_directory, request
-from flask_cors import CORS
-from flask_socketio import SocketIO
-import psycopg2
 import threading
 import queue
 import difflib  # Add difflib for province correction
 
+from ultralytics import YOLO
+from PIL import Image, ImageDraw, ImageFont
+from server.api import app, insert_plate, socketio
 from sidewalk import get_sidewalk_coords
 
 # Your API key for the Google Vision API
@@ -22,11 +17,6 @@ api_key = "AIzaSyBgqC-PH1Z-1vxJw3K_sRQFtHIctb3ndWM"
 
 # Directory to serve images from
 IMAGE_DIR = '../images'
-
-# Set up Flask app and socket for real-time communication
-app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*")
 
 # OCR Queue
 ocr_queue = queue.Queue()
@@ -43,54 +33,6 @@ def correct_province(detected_province):
     if closest_match:
         return closest_match[0]  # Return the closest match
     return detected_province  # If no close match is found, return the original
-
-# Function to connect to PostgreSQL database
-def get_db_connection():
-    try:
-        conn = psycopg2.connect(
-            dbname="license-plate",
-            user="postgres",
-            password="danunai",
-            host="localhost",
-            port="5432"
-        )
-        return conn
-    except psycopg2.Error as e:
-        print(f"Database connection error: {e}")
-        return None
-
-# Insert plate information into PostgreSQL
-def insert_plate(f_image, p_image, p_text, province, date=None):
-    conn = get_db_connection()
-    if conn is None:
-        return False
-
-    cursor = conn.cursor()
-    try:
-        # Change 'date' to 'data' to match the column name in your table
-        cursor.execute(
-            'INSERT INTO "plateDetection" (f_image, p_image, p_text, province, data) VALUES (%s, %s, %s, %s, NOW());',
-            (f_image, p_image, p_text, province)
-        )
-
-        conn.commit()
-        # Emit the correct data
-        socketio.emit('new_plate', {
-            "f_image": f_image,
-            "p_image": p_image,
-            "p_text": p_text,
-            "province": province,
-            "date": date  # You may still pass the 'date' here if it's being used elsewhere
-        })
-        cursor.close()
-        conn.close()
-        return True
-    except psycopg2.Error as e:
-        print(f"Error inserting data: {e}")
-        cursor.close()
-        conn.close()
-        return False
-
 
 # Function to perform OCR using Google Vision API via HTTP request
 def perform_ocr(image_path):
@@ -161,6 +103,16 @@ def ocr_worker():
                 success = insert_plate(full_image_path, plate_image_path, license_text, province)
                 if success:
                     print(f"Plate {license_text} successfully inserted.")
+
+                    # Make an HTTP POST request to trigger the SocketIO event
+                    try:
+                        response = requests.post('http://localhost:5000/sent_emit', json={'message': f'New plate added {license_text}'})
+                        if response.status_code == 200:
+                            print('Event emitted successfully.')
+                        else:
+                            print(f'Failed to emit event. Status code: {response.status_code}')
+                    except Exception as e:
+                        print(f'Error emitting event: {e}')
                 else:
                     print(f"Failed to insert plate {license_text}.")
         finally:

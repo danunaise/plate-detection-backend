@@ -1,11 +1,8 @@
-import os
-from datetime import datetime
 import psycopg2
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
-
-from connection import get_db_connection
+from server.connection import get_db_connection
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -14,6 +11,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # Directory to serve images from
 IMAGE_DIR = '../images'
 
+# Insert plate information into PostgreSQL and emit event
 def insert_plate(f_image, p_image, p_text, province, date=None):
     conn = get_db_connection()
     if conn is None:
@@ -22,26 +20,12 @@ def insert_plate(f_image, p_image, p_text, province, date=None):
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO plates (f_image, p_image, p_text, province, date) VALUES (%s, %s, %s, %s, NOW());",
+            'INSERT INTO "plateDetection" (f_image, p_image, p_text, province, date) VALUES (%s, %s, %s, %s, NOW());',
             (f_image, p_image, p_text, province)
         )
-        conn.commit()
-        print('Emitting new_plate event with data:', {
-            "f_image": f_image,
-            "p_image": p_image,
-            "p_text": p_text,
-            "province": province,
-            "date": date
-        })
-        socketio.emit('new_plate', {
-            "id": cursor.lastrowid,  # Ensure you have the ID of the newly inserted plate
-            "f_image": f_image,
-            "p_image": p_image,
-            "p_text": p_text,
-            "province": province,
-            "date": date
-        })
-        cursor.close()
+        conn.commit()  # Ensure commit is complete
+
+        cursor.close()  # Close the cursor and connection first
         conn.close()
         return True
     except psycopg2.Error as e:
@@ -50,11 +34,16 @@ def insert_plate(f_image, p_image, p_text, province, date=None):
         conn.close()
         return False
 
-@app.route('/test_emit', methods=['POST'])
+@app.route('/images/<path:filename>')
+def serve_image(filename):
+    # Remove the "images/" prefix from the filename
+    return send_from_directory(IMAGE_DIR, filename)
+
+@app.route('/sent_emit', methods=['POST'])
 def test_emit():
     data = request.json
     print('Emitting test data:', data)  # Log the data to see what's being emitted
-    socketio.emit('test_event', data)
+    socketio.emit('sent_emit', data)
     return jsonify({'status': 'Event emitted'})
 
 @app.route('/api/plates', methods=['GET'])
@@ -65,8 +54,7 @@ def get_plates():
 
     cursor = conn.cursor()
     try:
-        # Change 'date' to 'data' in the SELECT query
-        cursor.execute('SELECT id, f_image, p_image, p_text, province, data FROM "plateDetection";')
+        cursor.execute('SELECT id, f_image, p_image, p_text, province, date FROM "plateDetection";')
         rows = cursor.fetchall()
         plates = []
         for row in rows:
@@ -76,8 +64,7 @@ def get_plates():
                 "p_image": row[2],
                 "p_text": row[3],
                 "province": row[4],
-                # Ensure the 'data' field is converted to a string before returning
-                "data": row[5].strftime('%Y-%m-%d %H:%M:%S') if row[5] else None
+                "date": row[5].strftime('%Y-%m-%d %H:%M:%S') if row[5] else None
             })
         cursor.close()
         conn.close()
@@ -87,12 +74,6 @@ def get_plates():
         cursor.close()
         conn.close()
         return jsonify({"error": "Error fetching data"}), 500
-
-
-@app.route('/images/<path:filename>')
-def serve_image(filename):
-    # Remove the "images/" prefix from the filename
-    return send_from_directory(IMAGE_DIR, filename)
 
 # search
 @app.route('/api/search', methods=['GET'])
@@ -110,7 +91,7 @@ def search_plates():
         # ค้นหาข้อมูลที่มีค่า `p_text` หรือ `province` ที่ตรงกับคำค้นหา
         search_query = """
             SELECT id, f_image, p_image, p_text, province, date
-            FROM plates
+            FROM "plateDetection"
             WHERE p_text ILIKE %s OR province ILIKE %s;
         """
         cursor.execute(search_query, (f"%{search_term}%", f"%{search_term}%"))
@@ -139,12 +120,11 @@ def search_plates():
 def handle_connect():
     print("Client connected")
 
+
 @socketio.on('disconnect')
 def handle_disconnect():
     print("Client disconnected")
 
-def emit_new_plate(data):
-    socketio.emit('new_plate', data)
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
