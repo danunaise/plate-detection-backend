@@ -14,8 +14,6 @@ from sidewalk import get_sidewalk_coords
 
 # Your API key for the Google Vision API
 api_key = "AIzaSyBgqC-PH1Z-1vxJw3K_sRQFtHIctb3ndWM"
-
-# Directory to serve images from
 IMAGE_DIR = '../images'
 
 # OCR Queue
@@ -27,14 +25,18 @@ known_provinces = [
     "ชลบุรี", "ภูเก็ต", "สงขลา", "สุราษฎร์ธานี", "นครศรีธรรมราช"
 ]
 
-# Function to correct the province name based on similarity
+# Thai vowels for removal
+thai_vowels = ['ะ', 'า', 'ิ', 'ี', 'ึ', 'ื', 'ุ', 'ู', 'เ', 'แ', 'โ', 'ใ', 'ไ', '็', '่', '้', '๊', '๋']
+
+
+### Province and OCR-related functions
+
+# Correct province using closest matching
 def correct_province(detected_province):
     closest_match = difflib.get_close_matches(detected_province, known_provinces, n=1, cutoff=0.6)
-    if closest_match:
-        return closest_match[0]  # Return the closest match
-    return detected_province  # If no close match is found, return the original
+    return closest_match[0] if closest_match else detected_province
 
-# Function to perform OCR using Google Vision API via HTTP request
+# Perform OCR using Google Vision API
 def perform_ocr(image_path):
     try:
         with open(image_path, 'rb') as image_file:
@@ -44,7 +46,6 @@ def perform_ocr(image_path):
         return []
 
     image_base64 = base64.b64encode(content).decode('utf-8')
-
     url = f"https://vision.googleapis.com/v1/images:annotate?key={api_key}"
     headers = {'Content-Type': 'application/json'}
     body = {
@@ -60,32 +61,30 @@ def perform_ocr(image_path):
         response = requests.post(url, headers=headers, json=body)
         response.raise_for_status()
         response_data = response.json()
+        return [text['description'] for text in response_data['responses'][0].get('textAnnotations', [])]
     except requests.RequestException as e:
         print(f"HTTP request error: {e}")
         return []
 
-    detected_texts = []
-    if 'responses' in response_data and len(response_data['responses']) > 0:
-        texts = response_data['responses'][0].get('textAnnotations', [])
-        for text in texts:
-            detected_texts.append(text['description'])
 
-    return detected_texts
+### OCR Worker and Text Processing Functions
+
+# Remove vowels from Thai text
+def remove_thai_vowels(text):
+    return ''.join([char for char in text if char not in thai_vowels])
 
 # OCR worker thread that continuously processes items from the queue
 def ocr_worker():
     while True:
         try:
-            plate_image_path, full_image_path = ocr_queue.get()  # Get item from queue
-            if plate_image_path is None:
+            item = ocr_queue.get()  # Get item from queue
+
+            # Check if None was sent to stop the worker thread
+            if item is None:
                 break  # If None is sent, exit thread
 
-            # List of Thai vowel characters (both standalone and combining)
-            thai_vowels = ['ะ', 'า', 'ิ', 'ี', 'ึ', 'ื', 'ุ', 'ู', 'เ', 'แ', 'โ', 'ใ', 'ไ', '็', '่', '้', '๊', '๋']
-
-            # Function to remove vowels from a given string
-            def remove_thai_vowels(text):
-                return ''.join([char for char in text if char not in thai_vowels])
+            # Unpack the queue item only if it is not None
+            plate_image_path, full_image_path = item
 
             detected_texts = perform_ocr(plate_image_path)
             if detected_texts:
@@ -106,7 +105,8 @@ def ocr_worker():
 
                     # Make an HTTP POST request to trigger the SocketIO event
                     try:
-                        response = requests.post('http://localhost:5000/sent_emit', json={'message': f'New plate added {license_text}'})
+                        response = requests.post('http://localhost:5000/sent_emit',
+                                                 json={'message': f'New plate added {license_text}'})
                         if response.status_code == 200:
                             print('Event emitted successfully.')
                         else:
@@ -118,12 +118,16 @@ def ocr_worker():
         finally:
             ocr_queue.task_done()  # Mark task as done
 
+
 # Start OCR worker thread
 ocr_thread = threading.Thread(target=ocr_worker)
 ocr_thread.daemon = True  # This ensures the thread closes when the main program exits
 ocr_thread.start()
 
-# Load models only once
+
+### Video Processing and Object Detection Functions
+
+# Initialize YOLO models
 plate_model = YOLO("./model/platedetect.pt")
 bike_model = YOLO("./model/yolov8m.pt")
 
@@ -141,6 +145,7 @@ if not ret:
     print("Error: Could not read the first frame.")
     exit()
 
+# Video and frame configurations
 fps = cap.get(cv2.CAP_PROP_FPS)
 delay = int(1000 / fps)
 original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -163,7 +168,7 @@ thickness = 7
 crop_frame = frame[line_y1:line_y2, :]
 cv2.imwrite('captured_frame.png', crop_frame)
 print("Frame captured and saved.")
-start_coords, end_coords = get_sidewalk_coords('captured_frame.png', show_plot=True)
+start_coords, end_coords = get_sidewalk_coords('captured_frame.png', show_plot=False)
 
 # Adjust the coordinates to match the original frame
 start_coords = (start_coords[0], start_coords[1] + line_y1)
@@ -184,6 +189,10 @@ font_path = "fonts/Kanit-Regular.ttf"
 font_size = 80
 font = ImageFont.truetype(font_path, font_size)
 
+
+### Drawing Functions
+
+# Draw text with border
 def draw_text_with_border(draw, text, position, font, border_color, text_color):
     x, y = position
     offsets = [(-1, -1), (1, -1), (-1, 1), (1, 1)]
@@ -191,8 +200,12 @@ def draw_text_with_border(draw, text, position, font, border_color, text_color):
         draw.text((x + offset[0], y + offset[1]), text, font=font, fill=border_color)
     draw.text(position, text, font=font, fill=text_color)
 
+# Check if plate is between lines
 def is_plate_between_lines(y1, y2, line_top, line_bottom):
     return y1 > line_top and y2 < line_bottom
+
+
+### Capture and Detection Loops
 
 capture_delay = 9  # Set the delay in seconds for plate image
 full_capture_delay = 1  # Set the delay in seconds for full motorcycle image after plate detection
