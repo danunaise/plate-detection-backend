@@ -13,7 +13,7 @@ from server.api import app, insert_plate, socketio
 from sidewalk import get_sidewalk_coords
 
 # Your API key for the Google Vision API
-api_key = "AIzaSyBgqC-PH1Z-1vxJw3K_sRQFtHIctb3ndWM"
+api_key = ""
 IMAGE_DIR = '../images'
 
 # OCR Queue
