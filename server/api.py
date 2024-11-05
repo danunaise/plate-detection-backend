@@ -2,7 +2,7 @@ import psycopg2
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from server.connection import get_db_connection
+from connection import get_db_connection
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
